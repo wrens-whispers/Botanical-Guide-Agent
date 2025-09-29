@@ -12,7 +12,7 @@ from typing import Literal
 # ======================================================================
 
 # Using the user-specified model
-MODEL_ID = "deepseek/deepseek-chat-v3.1:free" 
+MODEL_ID = "deepseek/deepseek-chat-v3.1:free"
 
 # ======================================================================
 # 2. CONSTANTS AND DATA MAPPING
