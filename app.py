@@ -251,6 +251,9 @@ class BotanicalGuideAgent:
         # 2. Call the LLM to generate the structured readings (raw JSON string)
         json_string_raw = generate_llm_response(system_prompt)
         
+        # 💡 DEBUG LINE B: Display the raw string content on the app interface
+        st.write("DEBUG B: RAW LLM STRING RECEIVED:", json_string_raw)
+        
         # --- ULTRA-ROBUST JSON PARSING FIX: Strip everything outside the JSON block ---
         # Find the first opening brace '{' and the last closing brace '}' and extract ONLY that content.
         # re.DOTALL allows the regex to match across newlines.
@@ -284,47 +287,6 @@ class BotanicalGuideAgent:
         }
         
         return reading_text, fixed_info
-
-    def _get_next_reading_part(self) -> str:
-        """Retrieves the next stored reading part or a final message."""
-        
-        if self.current_reading_step == 0 or not self.expanded_readings:
-            # Safety check, should be handled by calling functions
-            return f"I need to prepare the reading for {self.current_plant.capitalize()}. Please try again."
-
-        next_step = self.current_reading_step + 1
-        
-        if next_step == 2:
-            self.current_reading_step = 2
-            return self.expanded_readings.get('part_2', "Error: Part 2 not found.")
-        
-        if next_step == 3:
-            self.current_reading_step = 3
-            return self.expanded_readings.get('part_3', "Error: Part 3 not found.")
-
-        # If we are past step 3, the reading is finished.
-        self.current_reading_step = 0
-        self.expanded_readings = {}
-        return "That concludes the full reading on this plant. **Ready for the next plant?**"
-
-
-    def _format_plant_info(self, info_dict: dict) -> str:
-        """Formats the Latin Name, etc., for the response."""
-        info_block = (
-            f"**Latin Name**: {info_dict.get('Latin Name', 'N/A')}\n"
-            f"**Region of Origin**: {info_dict.get('Region of Origin', 'N/A')}\n"
-            f"**Parts Used**: {info_dict.get('Parts Used', 'N/A')}\n"
-            f"**Contraindications**: {info_dict.get('Contraindications', 'None known')}\n\n"
-        )
-        return info_block
-
-    def _generate_reading(self) -> str:
-        """Initiates the reading process, getting the fixed info and the first part."""
-        
-        # When called initially, or after a plant/voice switch, we reset and generate readings.
-        narrative, info = self._get_expanded_reading() 
-
-        response = self._format_plant_info(info)
         
         # Check if an error occurred during expansion
         if "[LLM PARSING ERROR]" in narrative:
@@ -510,6 +472,9 @@ def generate_llm_response(system_prompt_content: str) -> str:
             temperature=0.5, 
             max_tokens=1024 
         )
+        
+        # 💡 DEBUG LINE A: Log API success
+        print(f"DEBUG A: LLM API call SUCCESS. Response object type: {type(response)}") 
         
         # Return the raw content, which should be a JSON string (possibly wrapped in markdown)
         return response.choices[0].message.content
