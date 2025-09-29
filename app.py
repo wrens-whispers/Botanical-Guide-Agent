@@ -288,6 +288,19 @@ class BotanicalGuideAgent:
         
         return reading_text, fixed_info
         
+       def _generate_reading(self) -> str:
+        """Calls the LLM data fetcher and formats the first part of the reading."""
+        
+        narrative, fixed_info = self._get_expanded_reading()
+
+        # Build the formatted response with fixed info
+        response = ""
+        response += f"***\n"
+        response += f"**Latin Name:** {fixed_info.get('Latin Name', 'N/A')} | "
+        response += f"**Region:** {fixed_info.get('Region of Origin', 'N/A')} | "
+        response += f"**Parts Used:** {fixed_info.get('Parts Used', 'N/A')}\n"
+        response += f"***\n\n"
+
         # Check if an error occurred during expansion
         if "[LLM PARSING ERROR]" in narrative:
             response += narrative
@@ -302,7 +315,6 @@ class BotanicalGuideAgent:
         response += "\n\n**Continue reading this plant's story?**"
             
         return response
-
     # --- VOICE SELECTION ---
     def _handle_select_voice(self, user_input: str) -> str:
         """Sets the voice, resets step counter, and then performs a reading."""
