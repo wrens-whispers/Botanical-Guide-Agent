@@ -1,0 +1,12 @@
+# Ignore project folders created by Python and the IDE
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Ignore the Streamlit local secrets file 
+# YOU MUST KEEP THIS FILE PRIVATE
+.streamlit/secrets.toml 
+
+# Ignore the console-based secrets file (if it still exists)
+.env
