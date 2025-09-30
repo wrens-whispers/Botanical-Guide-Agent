@@ -472,18 +472,16 @@ class BotanicalGuideAgent:
 # 5. API INTERACTION FUNCTION
 # ======================================================================
 
+# ======================================================================
+# 5. API INTERACTION FUNCTION
+# ======================================================================
+
 def generate_llm_response(system_prompt_content: str) -> str:
     """Sends the system prompt to the chosen LLM for prose generation (structured JSON expansion)."""
     
     try:
         response = client.chat.completions.create(
-            model=MODEL_ID,
-            messages=[
-                {"role": "system", "content": system_prompt_content},
-            ],
-            # Temperature slightly lower for structured JSON reliability
-            temperature=0.5, 
-            max_tokens=1024 
+            # ... all the arguments inside the create call
         )
         
         # 💡 DEBUG LINE A: Log API success
