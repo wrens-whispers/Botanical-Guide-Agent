@@ -472,23 +472,33 @@ class BotanicalGuideAgent:
 # 5. API INTERACTION FUNCTION
 # ======================================================================
 
-# ======================================================================
-# 5. API INTERACTION FUNCTION
-# ======================================================================
-
 def generate_llm_response(system_prompt_content: str) -> str:
     """Sends the system prompt to the chosen LLM for prose generation (structured JSON expansion)."""
     
     try:
         response = client.chat.completions.create(
-            # ... all the arguments inside the create call
+            model=MODEL_ID,
+            messages=[
+                {"role": "system", "content": system_prompt_content},
+            ],
+            # Temperature slightly lower for structured JSON reliability
+            temperature=0.5, 
+            max_tokens=1024 
         )
         
         # 💡 DEBUG LINE A: Log API success
         print(f"DEBUG A: LLM API call SUCCESS. Response object type: {type(response)}") 
         
+        raw_content = response.choices[0].message.content
+        
+        # --- NEW FAIL-SAFE CHECK ---
+        if not raw_content or raw_content.isspace():
+            print(f"[LLM CONTENT FAIL] Model returned empty or blank content for prompt.")
+            return "[EMPTY CONTENT ERROR] The LLM returned a blank response. Check model prompt for strict formatting rules."
+        # ---------------------------
+
         # Return the raw content, which should be a JSON string (possibly wrapped in markdown)
-        return response.choices[0].message.content
+        return raw_content
         
     except Exception as e:
         # Critical failure if the LLM can't generate the reading
