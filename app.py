@@ -14,7 +14,7 @@ import httpx # Required for custom timeout configuration
 # ======================================================================
 
 # Using the user-specified model
-MODEL_ID = "meta-llama/llama-3.3-70b-instruct:free"
+MODEL_ID = "deepseek/deepseek-chat-v3.1:free"
 
 # The global client will be initialized in run_streamlit_app
 client: OpenAI = None
