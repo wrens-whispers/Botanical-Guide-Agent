@@ -33,7 +33,7 @@ VOICE_MAPPING = {
     'evidence': 'Evidence-Based Herbalist'
 }
 
-# The document content. Note that each voice has its own short note again.
+# The document content (omitted for brevity, assume it is unchanged from previous versions)
 DOC_TEXT = """
 ---
 1. Cacao
@@ -191,9 +191,8 @@ class BotanicalGuideAgent:
         self.current_plant = sequence[0]
         self.current_plant_index = 0
         
-        # NEW STATE TRACKING for multi-step reading
+        # State Tracking for reading parts
         self.current_reading_step = 0 
-        # expanded_readings is now a list of prose strings, not a dictionary
         self.expanded_readings: list[str] = [] 
         
         self.REDIRECT_RESPONSES = [
@@ -205,7 +204,7 @@ class BotanicalGuideAgent:
     def _build_system_prompt(self, current_plant_row, user_input: str) -> str:
         """
         Builds the system prompt to enforce a structured prose output (Part 1, Part 2, Part 3) 
-        and guides the LLM on how to handle the user's input.
+        and guides the LLM on how to handle the user's input while maintaining guardrails.
         """
         
         plant_name = current_plant_row['plant'].capitalize()
@@ -215,7 +214,8 @@ class BotanicalGuideAgent:
         prompt = (
             f"You are a Botanical Garden Tour Guide for the plant **{plant_name}**. "
             f"Your persona is the **{target_voice.upper()}** herbalist. "
-            f"Your primary task is to expand the short note below into three distinct paragraphs of prose.\n\n"
+            f"Your role is to deliver a three-part scripted reading based on your 'notecards'. "
+            f"Your sole purpose is to provide structured information on the current plant.\n\n"
             
             f"DATA:\n"
             f"Latin Name: {current_plant_row['latin_name']}\n"
@@ -227,12 +227,13 @@ class BotanicalGuideAgent:
             f"USER INPUT: '{user_input}'\n\n"
             
             f"INSTRUCTIONS:\n"
-            f"1. **Ignore the USER INPUT if it is a navigational command** ('continue', 'next plant', 'elder'). If the USER INPUT is a question or conversation starter, **briefly address it** before starting the structured reading.\n"
-            f"2. **Your response MUST follow this exact, labeled structure** and contain ONLY the three parts of the reading:\n"
+            f"1. **Primary Guardrail:** Your response MUST stay focused on the plant. If the USER INPUT is off-topic (e.g., about movies, weather, or pricing), give a very brief, gentle acknowledgment, and immediately proceed to the structured reading.\n"
+            f"2. **Flow Control:** If the USER INPUT contains commands related to state change (like 'next plant', 'ginger', or another 'voice'), **ignore those commands** as the main application handles navigation. Only focus on interpreting general questions.\n"
+            f"3. **Your response MUST follow this exact, labeled structure** and contain ONLY the three parts of the reading:\n"
             f"   - **Part 1: History and Origin**\n"
             f"   - **Part 2: Key Features and Uses**\n"
             f"   - **Part 3: Scientific Details and Context**\n"
-            f"3. **Do not include any other text** (no greeting, no summary, no introduction to the parts, and no markdown wrappers like ```json``` or ```)."
+            f"4. **Do not include any other text** (no ending summary, no markdown wrappers)."
         )
         
         return prompt
@@ -259,13 +260,13 @@ class BotanicalGuideAgent:
         
         # --- ROBUST PROSE PARSING FIX ---
         # Look for the predefined Part labels to split the response
-        # Using a pattern that captures the labels and splits around them
         parts = re.split(r'\*\*Part \d+: .*?\*\*', prose_string_raw.strip(), re.DOTALL)
         
         # Fallback list for error cases
         self.expanded_readings = []
+        reading_text = ""
         
-        # Check if the split produced the expected number of sections (an empty string at [0], then Part 1, 2, 3)
+        # Check if the split produced the expected number of sections 
         if len(parts) >= 4:
             # Store the three main parts (indices 1, 2, 3)
             self.expanded_readings = [p.strip() for p in parts[1:4]]
@@ -292,11 +293,9 @@ class BotanicalGuideAgent:
     def _get_next_reading_part(self) -> str:
         """Retrieves and increments the reading part counter."""
         
-        # The list is 0-indexed, but our parts are 1-indexed (Part 1/3)
-        # Check if the next part exists
         if self.current_reading_step < len(self.expanded_readings):
-            next_part_content = self.expanded_readings[self.current_reading_step] # Use current_reading_step as the list index
-            self.current_reading_step += 1 # Increment for the next call
+            next_part_content = self.expanded_readings[self.current_reading_step] 
+            self.current_reading_step += 1 
             return next_part_content
         else:
             # All parts have been read
@@ -332,7 +331,6 @@ class BotanicalGuideAgent:
         if len(self.expanded_readings) > 1:
             response += "\n\n**Continue reading this plant's story?**"
         else:
-            # If for some reason we only got one part, stop here.
              response += "\n\n**Ready for the next plant?**"
             
         return response
@@ -344,11 +342,14 @@ class BotanicalGuideAgent:
         new_voice = next((v for v in self.voice_options if v in user_input.lower()), None)
         
         if not new_voice:
+            # Since the LLM handles interpretation, any non-voice command is treated as a redirect/question
             return self._handle_redirect(user_input)
             
         # Reset reading state whenever voice or plant changes
         self.current_reading_step = 0
         self.expanded_readings = [] 
+        
+        # The LLM prompt is now responsible for incorporating the user's conversational intent
         
         if self.current_voice is None:
             self.current_voice = new_voice
@@ -359,7 +360,7 @@ class BotanicalGuideAgent:
             return f"Voice switched to **{new_voice.upper()}** persona. Here is the expanded note on **{self.current_plant.capitalize()}**:\n\n" + self._generate_reading(user_input)
         
         else:
-            # If same voice is selected, check if we should start a reading or continue an existing one.
+            # If same voice is selected, regenerate the reading for the current plant (or continue if reading is active)
             if self.current_reading_step == 0:
                 return f"The voice is already set to **{self.current_voice}**. Let's start the reading on **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading(user_input)
             else:
@@ -374,11 +375,11 @@ class BotanicalGuideAgent:
             return f"Please select your preferred herbalist persona: {', '.join(self.voice_options)}."
 
         # 1. Check for 'next reading' command
-        if self.current_reading_step > 0 and ("next reading" in user_input or "continue" in user_input or "tell me more" in user_input):
+        if self.current_reading_step > 0 and any(w in user_input.lower() for w in ["next reading", "continue", "tell me more"]):
             return self._handle_continue_reading(user_input)
             
         # 2. Check for 'next plant'
-        if "next plant" in user_input:
+        if "next plant" in user_input.lower():
             if self.current_plant_index == len(self.plant_sequence) - 1:
                 return "We've completed the tour of all 10 plants. Please select a plant by name if you wish to re-visit one."
             
@@ -409,85 +410,68 @@ class BotanicalGuideAgent:
     def _handle_continue_reading(self, user_input: str) -> str:
         """Retrieves and formats the next part of the expanded reading."""
         
-        if not self.expanded_readings and self.current_reading_step == 0:
-            # This handles the case where a user tries to continue right after a plant/voice command
-            # It will trigger a new reading.
+        # If no reading is active, assume the user is asking a general question about the current plant
+        if not self.expanded_readings or self.current_reading_step == 0:
             return self._generate_reading(user_input)
         
-        if not self.expanded_readings and self.current_reading_step > 0:
-            # This should not happen with the new logic, but is a fail-safe
-            return f"I seem to have lost my notes on **{self.current_plant.capitalize()}**. I must prepare the full reading again.\n\n" + self._generate_reading(user_input)
-
         # Retrieve the next part of the story
         next_reading = self._get_next_reading_part()
         
-        # Check if the reading is complete (i.e., step 0 reset)
         if self.current_reading_step == 0:
             return next_reading # Returns the "That concludes the full reading..." message
 
-        # The reading is NOT complete, so format the output
-        
         response = f"**[Expanded Reading Part {self.current_reading_step}/3 - {self.current_voice.upper()} Persona]**\n"
         response += next_reading
         
         if self.current_reading_step < 3:
             response += "\n\n**Continue reading this plant's story?**"
         else:
-            # Safety net for the final part delivery
             response += "\n\nThat concludes the full reading on this plant. **Ready for the next plant?**"
-            self.current_reading_step = 0 # Reset state
+            self.current_reading_step = 0 
             self.expanded_readings = []
             
         return response
 
     def _handle_redirect(self, user_input: str) -> str:
-        """Handles all inputs that are NOT a valid voice, plant, or continue command."""
-        
+        """
+        Handles inputs that are not clear navigation or voice commands. 
+        Triggers a new reading but allows the LLM to interpret the user's question first.
+        """
         if self.current_voice is None:
             return f"Welcome! Please select your preferred herbalist persona: {', '.join(self.voice_options)}."
 
-        if any(w in user_input for w in ["location", "pricing", "commercial", "shop", "price"]):
-            return "I'm here to talk about the plants in our garden, not about shops or prices."
-        
-        redirect_template = random.choice(self.REDIRECT_RESPONSES)
-        
-        # Say the redirect sentence. Then, if a reading is in progress, ask to continue it.
-        redirect_response = redirect_template.format(plant=self.current_plant.capitalize())
-        
-        if self.current_reading_step > 0:
-            return redirect_response + f"\n\nShall we continue the reading on **{self.current_plant.capitalize()}**? (We are on Part {self.current_reading_step}/3)"
-        else:
-            return redirect_response + "\n\n**Ready for the next plant?**"
+        # Any conversational input that isn't a direct command is treated as a question about the current plant.
+        # This forces the LLM to process it (e.g., "what's the weather") and redirect, then deliver the script.
+        return self._generate_reading(user_input)
+
 
     def respond(self, user_input: str) -> str:
         """The main interaction method that executes the logic."""
-        user_input = user_input.lower().strip()
+        user_input_lower = user_input.lower().strip()
 
         # 0. Initial Greeting / Persona Selection Prompt
         if self.current_voice is None:
-            if user_input in ["hi", "hello", "begin", "start", ""]:
-                return f"Please select your preferred herbalist persona: {', '.join(self.voice_options)}."
-            if any(v in user_input for v in self.voice_options):
+            if any(v in user_input_lower for v in self.voice_options):
                 return self._handle_select_voice(user_input)
-            
             return f"Welcome! Please select your preferred herbalist persona: {', '.join(self.voice_options)}."
 
 
         # 1. COMMAND: Continue Reading (High Priority)
-        # Check if a reading is currently in progress before responding to continue commands
-        if self.current_reading_step > 0 and any(w in user_input for w in ["continue", "next reading", "more", "tell me more"]):
+        if self.current_reading_step > 0 and any(w in user_input_lower for w in ["continue", "next reading", "more", "tell me more"]):
             return self._handle_continue_reading(user_input)
         
         # 2. COMMAND: Change Voice 
-        if any(v in user_input or f"voice {v}" in user_input for v in self.voice_options):
+        if any(v in user_input_lower for v in self.voice_options):
             return self._handle_select_voice(user_input)
 
         # 3. COMMAND: Next Plant or Plant by Name 
         plant_commands = ["next plant"] + self.plant_sequence
-        if any(p in user_input for p in plant_commands):
+        if any(p in user_input_lower for p in plant_commands):
             return self._handle_plant_navigation(user_input)
         
-        # 4. Handle all other inputs (Redirect)
+        # 4. Handle all other inputs (Redirect/Vague Question)
+        # This now routes ALL conversational inputs back to _generate_reading 
+        # via _handle_redirect, allowing the LLM prompt to manage the guardrail and content delivery.
         return self._handle_redirect(user_input)
 
 # ======================================================================
@@ -503,13 +487,12 @@ def generate_llm_response(system_prompt_content: str) -> str:
             messages=[
                 {"role": "system", "content": system_prompt_content},
             ],
-            # Temperature slightly lower for structured reliability
             temperature=0.5, 
             max_tokens=1024 
         )
         
-        # 💡 DEBUG LINE A: Log API success (only visible in Streamlit Cloud logs)
-        print(f"DEBUG A: LLM API call SUCCESS. Response object type: {type(response)}") 
+        # Log success (only visible in Streamlit Cloud logs)
+        print(f"DEBUG A: LLM API call SUCCESS.") 
         
         raw_content = response.choices[0].message.content
         
@@ -550,7 +533,7 @@ def run_streamlit_app():
         # CRITICAL: Initialize the global client with the loaded secret
         global client 
         client = OpenAI(
-            base_url="[https://openrouter.ai/api/v1](https://openrouter.ai/api/v1)",
+            base_url="https://openrouter.ai/api/v1",
             api_key=openrouter_key, 
         )
         
