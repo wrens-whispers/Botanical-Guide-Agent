@@ -287,8 +287,8 @@ class BotanicalGuideAgent:
         }
         
         return reading_text, fixed_info
-        
-       def _generate_reading(self) -> str:
+
+    def _generate_reading(self) -> str:
         """Calls the LLM data fetcher and formats the first part of the reading."""
         
         narrative, fixed_info = self._get_expanded_reading()
@@ -315,6 +315,7 @@ class BotanicalGuideAgent:
         response += "\n\n**Continue reading this plant's story?**"
             
         return response
+
     # --- VOICE SELECTION ---
     def _handle_select_voice(self, user_input: str) -> str:
         """Sets the voice, resets step counter, and then performs a reading."""
@@ -339,7 +340,7 @@ class BotanicalGuideAgent:
         else:
             # If same voice is selected, check if we should start a reading or continue an existing one.
             if self.current_reading_step == 0:
-                 return f"The voice is already set to **{self.current_voice}**. Let's start the reading on **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading()
+                return f"The voice is already set to **{self.current_voice}**. Let's start the reading on **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading()
             else:
                 return self._handle_continue_reading(user_input)
 
@@ -349,7 +350,7 @@ class BotanicalGuideAgent:
         """Handles 'next plant' or 'plant by name', and then performs a reading."""
         
         if self.current_voice is None:
-             return f"Please select your preferred herbalist persona: {', '.join(self.voice_options)}."
+            return f"Please select your preferred herbalist persona: {', '.join(self.voice_options)}."
 
         # 1. Check for 'next reading' command
         if self.current_reading_step > 0 and ("next reading" in user_input or "continue" in user_input or "tell me more" in user_input):
@@ -358,7 +359,7 @@ class BotanicalGuideAgent:
         # 2. Check for 'next plant'
         if "next plant" in user_input:
             if self.current_plant_index == len(self.plant_sequence) - 1:
-                 return "We've completed the tour of all 10 plants. Please select a plant by name if you wish to re-visit one."
+                return "We've completed the tour of all 10 plants. Please select a plant by name if you wish to re-visit one."
             
             # Reset reading state when moving to a new plant
             self.current_reading_step = 0 
@@ -388,12 +389,12 @@ class BotanicalGuideAgent:
         """Retrieves and formats the next part of the expanded reading."""
         
         if not self.expanded_readings and self.current_reading_step == 0:
-             # Should only happen if 'continue' is pressed before the first reading is ready
-             return self._generate_reading()
+            # Should only happen if 'continue' is pressed before the first reading is ready
+            return self._generate_reading()
         
         if not self.expanded_readings and self.current_reading_step > 0:
-             # This means a partial read was shown but the dictionary is empty due to a prior error.
-             return f"I seem to have lost my notes on **{self.current_plant.capitalize()}**. I must prepare the full reading again.\n\n" + self._generate_reading()
+            # This means a partial read was shown but the dictionary is empty due to a prior error.
+            return f"I seem to have lost my notes on **{self.current_plant.capitalize()}**. I must prepare the full reading again.\n\n" + self._generate_reading()
 
         # Retrieve the next part of the story
         next_reading = self._get_next_reading_part()
@@ -408,20 +409,20 @@ class BotanicalGuideAgent:
         response += next_reading
         
         if self.current_reading_step < 3:
-             response += "\n\n**Continue reading this plant's story?**"
+            response += "\n\n**Continue reading this plant's story?**"
         else:
-             # Safety net for the final part delivery
-             response += "\n\nThat concludes the full reading on this plant. **Ready for the next plant?**"
-             self.current_reading_step = 0 # Reset state
-             self.expanded_readings = {}
-             
+            # Safety net for the final part delivery
+            response += "\n\nThat concludes the full reading on this plant. **Ready for the next plant?**"
+            self.current_reading_step = 0 # Reset state
+            self.expanded_readings = {}
+            
         return response
 
     def _handle_redirect(self, user_input: str) -> str:
         """Handles all inputs that are NOT a valid voice, plant, or continue command."""
         
         if self.current_voice is None:
-             return f"Welcome! Please select your preferred herbalist persona: {', '.join(self.voice_options)}."
+            return f"Welcome! Please select your preferred herbalist persona: {', '.join(self.voice_options)}."
 
         if any(w in user_input for w in ["location", "pricing", "commercial", "shop", "price"]):
             return "I'm here to talk about the plants in our garden, not about shops or prices."
@@ -453,7 +454,7 @@ class BotanicalGuideAgent:
         # 1. COMMAND: Continue Reading (High Priority)
         # Check if a reading is currently in progress before responding to continue commands
         if self.current_reading_step > 0 and any(w in user_input for w in ["continue", "next reading", "more", "tell me more"]):
-             return self._handle_continue_reading(user_input)
+            return self._handle_continue_reading(user_input)
         
         # 2. COMMAND: Change Voice 
         if any(v in user_input or f"voice {v}" in user_input for v in self.voice_options):
