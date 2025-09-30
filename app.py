@@ -6,7 +6,7 @@ import random
 import json 
 from openai import OpenAI
 from typing import Literal
-import streamlit as st # Streamlit is imported here, though used later
+import streamlit as st 
 
 # ======================================================================
 # 1. ENVIRONMENT AND API CONFIGURATION
@@ -16,8 +16,6 @@ import streamlit as st # Streamlit is imported here, though used later
 MODEL_ID = "deepseek/deepseek-chat-v3.1:free"
 
 # The global client will be initialized in run_streamlit_app 
-# once the API key is loaded from st.secrets.
-# It is defined globally here to satisfy mypy/linters for use in generate_llm_response
 client: OpenAI = None 
 
 # ======================================================================
@@ -195,7 +193,8 @@ class BotanicalGuideAgent:
         
         # NEW STATE TRACKING for multi-step reading
         self.current_reading_step = 0 
-        self.expanded_readings = {} # Stores the three expanded parts for the current plant/voice
+        # expanded_readings is now a list of prose strings, not a dictionary
+        self.expanded_readings: list[str] = [] 
         
         self.REDIRECT_RESPONSES = [
             "Interesting thought! These plants adapt in their own ways too. Let's return to {plant}.",
@@ -203,19 +202,20 @@ class BotanicalGuideAgent:
             "Noted. Our tour is focused on the plants—here's more about {plant}."
         ]
         
-    def _build_system_prompt(self, current_plant_row) -> str:
+    def _build_system_prompt(self, current_plant_row, user_input: str) -> str:
         """
-        [FIXED PROMPT] Simplified instructions to increase model reliability and content generation.
+        Builds the system prompt to enforce a structured prose output (Part 1, Part 2, Part 3) 
+        and guides the LLM on how to handle the user's input.
         """
         
         plant_name = current_plant_row['plant'].capitalize()
         target_voice = current_plant_row['voice']
         
-        # Format all input data into the instruction block
+        # Format the core instruction and data
         prompt = (
             f"You are a Botanical Garden Tour Guide for the plant **{plant_name}**. "
             f"Your persona is the **{target_voice.upper()}** herbalist. "
-            f"Your task is to expand the short note below into three distinct paragraphs.\n\n"
+            f"Your primary task is to expand the short note below into three distinct paragraphs of prose.\n\n"
             
             f"DATA:\n"
             f"Latin Name: {current_plant_row['latin_name']}\n"
@@ -224,22 +224,23 @@ class BotanicalGuideAgent:
             f"Contraindications: {current_plant_row['contraindications']}\n"
             f"Short Note: {current_plant_row['note']}\n\n"
             
-            f"INSTRUCTIONS:\n"
-            f"Generate a single JSON object. The keys MUST be 'part_1', 'part_2', and 'part_3'.\n"
-            f"1. part_1: Focus on History and Origin.\n"
-            f"2. part_2: Focus on Key Features and Uses.\n"
-            f"3. part_3: Focus on Scientific Details and Context.\n"
-            f"Output ONLY the JSON object, no other surrounding text or markdown wrappers.\n\n"
+            f"USER INPUT: '{user_input}'\n\n"
             
-            f"Example: {{\"part_1\": \"...\", \"part_2\": \"...\", \"part_3\": \"...\"}}"
+            f"INSTRUCTIONS:\n"
+            f"1. **Ignore the USER INPUT if it is a navigational command** ('continue', 'next plant', 'elder'). If the USER INPUT is a question or conversation starter, **briefly address it** before starting the structured reading.\n"
+            f"2. **Your response MUST follow this exact, labeled structure** and contain ONLY the three parts of the reading:\n"
+            f"   - **Part 1: History and Origin**\n"
+            f"   - **Part 2: Key Features and Uses**\n"
+            f"   - **Part 3: Scientific Details and Context**\n"
+            f"3. **Do not include any other text** (no greeting, no summary, no introduction to the parts, and no markdown wrappers like ```json``` or ```)."
         )
         
         return prompt
 
-    def _get_expanded_reading(self) -> tuple[str, dict]:
+    def _get_expanded_reading(self, user_input: str) -> tuple[str, dict]:
         """
-        [ULTRA-ROBUST JSON PARSING FIX] Collects data for the current plant/voice and sends to LLM 
-        for three structured narrative parts.
+        Collects data, sends the prompt, and splits the LLM's prose response 
+        into three parts based on the labeled structure.
         """
         
         try:
@@ -250,35 +251,33 @@ class BotanicalGuideAgent:
         except IndexError:
             return "Error: Plant data not found for the current plant and voice.", {}
 
-        # 1. Generate the LLM System Prompt
-        system_prompt = self._build_system_prompt(plant_row)
+        # 1. Generate the LLM System Prompt with the user's raw input
+        system_prompt = self._build_system_prompt(plant_row, user_input)
         
-        # 2. Call the LLM to generate the structured readings (raw JSON string)
-        json_string_raw = generate_llm_response(system_prompt)
+        # 2. Call the LLM to generate the structured readings (raw prose string)
+        prose_string_raw = generate_llm_response(system_prompt)
         
-        # --- ULTRA-ROBUST JSON PARSING FIX: Strip everything outside the JSON block ---
-        # Find the first opening brace '{' and the last closing brace '}' and extract ONLY that content.
-        # re.DOTALL allows the regex to match across newlines.
-        match = re.search(r'\{.*\}', json_string_raw.strip(), re.DOTALL)
+        # --- ROBUST PROSE PARSING FIX ---
+        # Look for the predefined Part labels to split the response
+        # Using a pattern that captures the labels and splits around them
+        parts = re.split(r'\*\*Part \d+: .*?\*\*', prose_string_raw.strip(), re.DOTALL)
         
-        if match:
-            json_string_clean = match.group(0)
+        # Fallback list for error cases
+        self.expanded_readings = []
+        
+        # Check if the split produced the expected number of sections (an empty string at [0], then Part 1, 2, 3)
+        if len(parts) >= 4:
+            # Store the three main parts (indices 1, 2, 3)
+            self.expanded_readings = [p.strip() for p in parts[1:4]]
+            
+            if self.expanded_readings[0]:
+                reading_text = self.expanded_readings[0] # Part 1 content
+                self.current_reading_step = 1 # Set to start at the first reading
+            else:
+                 reading_text = f"[LLM STRUCTURE ERROR] The guide generated structure but Part 1 was empty. Raw output begins: {prose_string_raw[:200]}..."
         else:
-            json_string_clean = json_string_raw # If no match, try the original raw string as a fallback
-        # ---------------------------------------------------------------------------
-        
-        try:
-            # Attempt to parse the cleaned string
-            self.expanded_readings = json.loads(json_string_clean)
-            self.current_reading_step = 1 # Set to start at the first reading
-            
-            # We return the first part immediately.
-            reading_text = self.expanded_readings.get('part_1', "Error: Part 1 not found.")
-            
-        except json.JSONDecodeError as e:
-            # Handle cases where LLM output is not perfect JSON or is empty
-            reading_text = f"[LLM PARSING ERROR] Could not decode structured reading. Details: {e}\nRaw output begins: {json_string_raw[:200]}..."
-            self.expanded_readings = {} # Clear readings to force re-gen on next attempt or signal error
+            # The model failed to adhere to the Part structure, or returned an error/empty content
+            reading_text = f"[LLM STRUCTURE ERROR] The guide failed to generate the reading correctly. Raw output begins: {prose_string_raw[:200]}..."
 
         # Extract fixed info for local formatting
         fixed_info = {
@@ -293,22 +292,23 @@ class BotanicalGuideAgent:
     def _get_next_reading_part(self) -> str:
         """Retrieves and increments the reading part counter."""
         
+        # The list is 0-indexed, but our parts are 1-indexed (Part 1/3)
         # Check if the next part exists
-        if self.current_reading_step < 3:
-            self.current_reading_step += 1
-            key = f'part_{self.current_reading_step}'
-            return self.expanded_readings.get(key, f"Error: {key} not found in stored reading.")
+        if self.current_reading_step < len(self.expanded_readings):
+            next_part_content = self.expanded_readings[self.current_reading_step] # Use current_reading_step as the list index
+            self.current_reading_step += 1 # Increment for the next call
+            return next_part_content
         else:
             # All parts have been read
             self.current_reading_step = 0 # Reset state
-            self.expanded_readings = {}
+            self.expanded_readings = []
             return f"That concludes the full reading on **{self.current_plant.capitalize()}**. **Ready for the next plant?**"
 
 
-    def _generate_reading(self) -> str:
+    def _generate_reading(self, user_input: str) -> str:
         """Calls the LLM data fetcher and formats the first part of the reading."""
         
-        narrative, fixed_info = self._get_expanded_reading()
+        narrative, fixed_info = self._get_expanded_reading(user_input)
 
         # Build the formatted response with fixed info
         response = ""
@@ -319,7 +319,7 @@ class BotanicalGuideAgent:
         response += f"***\n\n"
 
         # Check if an error occurred during expansion
-        if "[LLM PARSING ERROR]" in narrative:
+        if "[LLM STRUCTURE ERROR]" in narrative:
             response += narrative
             response += "\n\n**Please try another command or quit.**"
             return response
@@ -329,7 +329,11 @@ class BotanicalGuideAgent:
         response += narrative
         
         # We now ask for the NEXT reading.
-        response += "\n\n**Continue reading this plant's story?**"
+        if len(self.expanded_readings) > 1:
+            response += "\n\n**Continue reading this plant's story?**"
+        else:
+            # If for some reason we only got one part, stop here.
+             response += "\n\n**Ready for the next plant?**"
             
         return response
 
@@ -344,20 +348,20 @@ class BotanicalGuideAgent:
             
         # Reset reading state whenever voice or plant changes
         self.current_reading_step = 0
-        self.expanded_readings = {} 
+        self.expanded_readings = [] 
         
         if self.current_voice is None:
             self.current_voice = new_voice
-            return f"Great choice! I'm excited to share our garden with you from the perspective of a **{new_voice}** herbalist. Let's begin with **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading()
+            return f"Great choice! I'm excited to share our garden with you from the perspective of a **{new_voice}** herbalist. Let's begin with **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading(user_input)
         
         elif new_voice != self.current_voice:
             self.current_voice = new_voice
-            return f"Voice switched to **{new_voice.upper()}** persona. Here is the expanded note on **{self.current_plant.capitalize()}**:\n\n" + self._generate_reading()
+            return f"Voice switched to **{new_voice.upper()}** persona. Here is the expanded note on **{self.current_plant.capitalize()}**:\n\n" + self._generate_reading(user_input)
         
         else:
             # If same voice is selected, check if we should start a reading or continue an existing one.
             if self.current_reading_step == 0:
-                return f"The voice is already set to **{self.current_voice}**. Let's start the reading on **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading()
+                return f"The voice is already set to **{self.current_voice}**. Let's start the reading on **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading(user_input)
             else:
                 return self._handle_continue_reading(user_input)
 
@@ -380,23 +384,23 @@ class BotanicalGuideAgent:
             
             # Reset reading state when moving to a new plant
             self.current_reading_step = 0 
-            self.expanded_readings = {}
+            self.expanded_readings = []
             
             self.current_plant_index = (self.current_plant_index + 1) % len(self.plant_sequence)
             self.current_plant = self.plant_sequence[self.current_plant_index]
             
-            return f"Moving to the next plant, **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading()
+            return f"Moving to the next plant, **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading(user_input)
 
         # 3. Check for 'plant by name'
         named_plant = next((p for p in self.plant_sequence if p in user_input.lower()), None)
         if named_plant:
             # Reset reading state when switching to a named plant
             self.current_reading_step = 0
-            self.expanded_readings = {}
+            self.expanded_readings = []
 
             self.current_plant = named_plant
             self.current_plant_index = self.plant_sequence.index(named_plant)
-            return f"Switching focus to **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading()
+            return f"Switching focus to **{self.current_plant.capitalize()}**.\n\n" + self._generate_reading(user_input)
         
         # If input was not a recognized command, it's a redirect.
         return self._handle_redirect(user_input)
@@ -406,12 +410,13 @@ class BotanicalGuideAgent:
         """Retrieves and formats the next part of the expanded reading."""
         
         if not self.expanded_readings and self.current_reading_step == 0:
-            # Should only happen if 'continue' is pressed before the first reading is ready
-            return self._generate_reading()
+            # This handles the case where a user tries to continue right after a plant/voice command
+            # It will trigger a new reading.
+            return self._generate_reading(user_input)
         
         if not self.expanded_readings and self.current_reading_step > 0:
-            # This means a partial read was shown but the dictionary is empty due to a prior error.
-            return f"I seem to have lost my notes on **{self.current_plant.capitalize()}**. I must prepare the full reading again.\n\n" + self._generate_reading()
+            # This should not happen with the new logic, but is a fail-safe
+            return f"I seem to have lost my notes on **{self.current_plant.capitalize()}**. I must prepare the full reading again.\n\n" + self._generate_reading(user_input)
 
         # Retrieve the next part of the story
         next_reading = self._get_next_reading_part()
@@ -431,7 +436,7 @@ class BotanicalGuideAgent:
             # Safety net for the final part delivery
             response += "\n\nThat concludes the full reading on this plant. **Ready for the next plant?**"
             self.current_reading_step = 0 # Reset state
-            self.expanded_readings = {}
+            self.expanded_readings = []
             
         return response
 
@@ -490,7 +495,7 @@ class BotanicalGuideAgent:
 # ======================================================================
 
 def generate_llm_response(system_prompt_content: str) -> str:
-    """Sends the system prompt to the chosen LLM for prose generation (structured JSON expansion)."""
+    """Sends the system prompt to the chosen LLM for prose generation (structured expansion)."""
     
     try:
         response = client.chat.completions.create(
@@ -498,20 +503,23 @@ def generate_llm_response(system_prompt_content: str) -> str:
             messages=[
                 {"role": "system", "content": system_prompt_content},
             ],
-            # Temperature slightly lower for structured JSON reliability
+            # Temperature slightly lower for structured reliability
             temperature=0.5, 
             max_tokens=1024 
         )
-                
+        
+        # 💡 DEBUG LINE A: Log API success (only visible in Streamlit Cloud logs)
+        print(f"DEBUG A: LLM API call SUCCESS. Response object type: {type(response)}") 
+        
         raw_content = response.choices[0].message.content
         
-        # --- NEW FAIL-SAFE CHECK ---
+        # --- FAIL-SAFE CHECK ---
         if not raw_content or raw_content.isspace():
             print(f"[LLM CONTENT FAIL] Model returned empty or blank content for prompt.")
-            return "[EMPTY CONTENT ERROR] The LLM returned a blank response. Check model prompt for strict formatting rules."
+            return "[EMPTY CONTENT ERROR] The LLM returned a blank response."
         # ---------------------------
 
-        # Return the raw content, which should be a JSON string (possibly wrapped in markdown)
+        # Return the raw content
         return raw_content
         
     except Exception as e:
@@ -542,7 +550,7 @@ def run_streamlit_app():
         # CRITICAL: Initialize the global client with the loaded secret
         global client 
         client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
+            base_url="[https://openrouter.ai/api/v1](https://openrouter.ai/api/v1)",
             api_key=openrouter_key, 
         )
         
