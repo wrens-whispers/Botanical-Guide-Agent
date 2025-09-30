@@ -197,10 +197,9 @@ class BotanicalGuideAgent:
             "Noted. Our tour is focused on the plants—here's more about {plant}."
         ]
         
-    def _build_system_prompt(self, current_plant_row) -> str:
+def _build_system_prompt(self, current_plant_row) -> str:
         """
-        [ULTRA-SIMPLIFIED PROMPT FIX] Uses minimal context to prevent DeepSeek from 
-        failing to generate content and return an empty string.
+        [FIXED PROMPT] Simplified instructions to increase model reliability and content generation.
         """
         
         plant_name = current_plant_row['plant'].capitalize()
@@ -219,13 +218,13 @@ class BotanicalGuideAgent:
             f"Contraindications: {current_plant_row['contraindications']}\n"
             f"Short Note: {current_plant_row['note']}\n\n"
             
-            f"PARAGRAPH INSTRUCTIONS:\n"
+            f"INSTRUCTIONS:\n"
+            f"Generate a single JSON object. The keys MUST be 'part_1', 'part_2', and 'part_3'.\n"
             f"1. part_1: Focus on History and Origin.\n"
             f"2. part_2: Focus on Key Features and Uses.\n"
-            f"3. part_3: Focus on Scientific Details and Context.\n\n"
+            f"3. part_3: Focus on Scientific Details and Context.\n"
+            f"Output ONLY the JSON object, no other surrounding text or markdown wrappers.\n\n"
             
-            f"OUTPUT FORMAT:\n"
-            f"You MUST generate a JSON object with the keys 'part_1', 'part_2', and 'part_3'. Do not include any text outside the JSON block.\n"
             f"Example: {{\"part_1\": \"...\", \"part_2\": \"...\", \"part_3\": \"...\"}}"
         )
         
