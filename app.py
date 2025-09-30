@@ -6,6 +6,7 @@ import random
 import json 
 from openai import OpenAI
 from typing import Literal
+import streamlit as st # Streamlit is imported here, though used later
 
 # ======================================================================
 # 1. ENVIRONMENT AND API CONFIGURATION
@@ -13,6 +14,11 @@ from typing import Literal
 
 # Using the user-specified model
 MODEL_ID = "deepseek/deepseek-chat-v3.1:free"
+
+# The global client will be initialized in run_streamlit_app 
+# once the API key is loaded from st.secrets.
+# It is defined globally here to satisfy mypy/linters for use in generate_llm_response
+client: OpenAI = None 
 
 # ======================================================================
 # 2. CONSTANTS AND DATA MAPPING
@@ -197,7 +203,7 @@ class BotanicalGuideAgent:
             "Noted. Our tour is focused on the plants—here's more about {plant}."
         ]
         
-def _build_system_prompt(self, current_plant_row) -> str:
+    def _build_system_prompt(self, current_plant_row) -> str:
         """
         [FIXED PROMPT] Simplified instructions to increase model reliability and content generation.
         """
@@ -286,6 +292,21 @@ def _build_system_prompt(self, current_plant_row) -> str:
         }
         
         return reading_text, fixed_info
+
+    def _get_next_reading_part(self) -> str:
+        """Retrieves and increments the reading part counter."""
+        
+        # Check if the next part exists
+        if self.current_reading_step < 3:
+            self.current_reading_step += 1
+            key = f'part_{self.current_reading_step}'
+            return self.expanded_readings.get(key, f"Error: {key} not found in stored reading.")
+        else:
+            # All parts have been read
+            self.current_reading_step = 0 # Reset state
+            self.expanded_readings = {}
+            return f"That concludes the full reading on **{self.current_plant.capitalize()}**. **Ready for the next plant?**"
+
 
     def _generate_reading(self) -> str:
         """Calls the LLM data fetcher and formats the first part of the reading."""
@@ -507,12 +528,6 @@ def generate_llm_response(system_prompt_content: str) -> str:
 # ======================================================================
 # 6. STREAMLIT UI RUNNER
 # ======================================================================
-
-import streamlit as st # <-- Ensure this import is at the top of your app.py file
-
-# The global client setup is moved into the run_streamlit_app function 
-# to ensure it uses the key from st.secrets.
-# (The client definition at the top of the file should be a placeholder or removed if possible)
 
 def run_streamlit_app():
     # 1. Configuration and Title
