@@ -14,7 +14,7 @@ import httpx # Required for custom timeout configuration
 # ======================================================================
 
 # Using the user-specified model
-MODEL_ID = "openai/gpt-4.1-mini"
+MODEL_ID = "anthropic/claude-3-haiku"
 
 # The global client will be initialized in run_streamlit_app
 client: OpenAI = None
