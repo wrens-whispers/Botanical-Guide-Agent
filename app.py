@@ -256,9 +256,6 @@ class BotanicalGuideAgent:
         # 2. Call the LLM to generate the structured readings (raw JSON string)
         json_string_raw = generate_llm_response(system_prompt)
         
-        # 💡 DEBUG LINE B: Display the raw string content on the app interface
-        st.write("DEBUG B: RAW LLM STRING RECEIVED:", json_string_raw)
-        
         # --- ULTRA-ROBUST JSON PARSING FIX: Strip everything outside the JSON block ---
         # Find the first opening brace '{' and the last closing brace '}' and extract ONLY that content.
         # re.DOTALL allows the regex to match across newlines.
@@ -505,10 +502,7 @@ def generate_llm_response(system_prompt_content: str) -> str:
             temperature=0.5, 
             max_tokens=1024 
         )
-        
-        # 💡 DEBUG LINE A: Log API success
-        print(f"DEBUG A: LLM API call SUCCESS. Response object type: {type(response)}") 
-        
+                
         raw_content = response.choices[0].message.content
         
         # --- NEW FAIL-SAFE CHECK ---
