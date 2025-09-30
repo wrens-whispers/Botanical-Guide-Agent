@@ -261,7 +261,7 @@ class BotanicalGuideAgent:
 
         # --- ROBUST PROSE PARSING FIX ---
         # Look for the predefined Part labels to split the response
-        parts = re.split(r'\*\*Part \d+: .*?\*\*', prose_string_raw.strip(), re.DOTALL)
+        parts = re.split(r'(?:\*\*|)\s*Part\s+\d+:\s+.*?(?:\*\*|)', prose_string_raw.strip(), re.DOTALL)
 
         # Fallback list for error cases
         self.expanded_readings = []
