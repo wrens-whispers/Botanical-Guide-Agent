@@ -13,7 +13,7 @@ import streamlit as st
 # ======================================================================
 
 # Using the user-specified model
-MODEL_ID = "nousresearch/deephermes-3-llama-3-8b-preview:free"
+MODEL_ID = "x-ai/grok-4-fast:free"
 
 # The global client will be initialized in run_streamlit_app 
 client: OpenAI = None 
