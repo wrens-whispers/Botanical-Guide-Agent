@@ -13,7 +13,7 @@ import streamlit as st
 # ======================================================================
 
 # Using the user-specified model
-MODEL_ID = "x-ai/grok-4-fast:free"
+MODEL_ID = "deepseek/deepseek-r1-0528:free"
 
 # The global client will be initialized in run_streamlit_app 
 client: OpenAI = None 
