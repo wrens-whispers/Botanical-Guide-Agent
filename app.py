@@ -14,7 +14,7 @@ import httpx # Required for custom timeout configuration
 # ======================================================================
 
 # Using the user-specified model
-MODEL_ID = "openai/gpt-oss-20b"
+MODEL_ID = "google/gemini-2.0-flash-lite-001"
 
 # The global client will be initialized in run_streamlit_app
 client: OpenAI = None
