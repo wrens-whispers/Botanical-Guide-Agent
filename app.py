@@ -14,7 +14,7 @@ import httpx # Required for custom timeout configuration
 # ======================================================================
 
 # Using the user-specified model
-MODEL_ID = "nousresearch/deephermes-3-llama-3-8b-preview:free"
+MODEL_ID = "openai/gpt-oss-20b"
 
 # The global client will be initialized in run_streamlit_app
 client: OpenAI = None
